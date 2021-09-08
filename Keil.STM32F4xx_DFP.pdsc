@@ -1,0 +1,383 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<package schemaVersion="1.6.3" xmlns:xs="http://www.w3.org/2001/XMLSchema-instance" xs:noNamespaceSchemaLocation="PACK.xsd">
+  <vendor>Keil</vendor>
+  <name>STM32F4xx_DFP</name>
+  <description>STMicroelectronics STM32F4 Series Device Support, Drivers and Examples</description>
+  <url>http://www.keil.com/pack/</url>
+
+  <releases>
+    <release version="2.15.0" date="2020-09-28"/>
+  </releases>
+
+  <devices>
+    <family Dfamily="STM32F4 Series" Dvendor="STMicroelectronics:13">
+      <!-- *************************  Device 'STM32F429ZI'  ***************************** -->
+      <device Dname="STM32F429ZITx">
+        <processor Dcore="Cortex-M4" DcoreVersion="r0p1" Dfpu="1" Dmpu="1" Dendian="Little-endian" Dclock="180000000"/>
+
+        <memory id="IROM1"                                      start="0x08000000" size="0x00200000" startup="1" default="1"/>
+        <memory id="IRAM1"                                      start="0x20000000" size="0x00030000" init   ="0" default="1"/>
+        <memory id="IRAM2"                                      start="0x10000000" size="0x00010000" init   ="0" default="0"/>
+        <algorithm name="CMSIS/Flash/STM32F4xx_2048.FLM"        start="0x08000000" size="0x00200000"             default="1"/>
+        <algorithm name="CMSIS/Flash/STM32F42xxx_43xxx_OPT.FLM" start="0x1FFFC000" size="0x00000008"             default="0"/>
+        <algorithm name="CMSIS/Flash/STM32F4xx_OTP.FLM"         start="0x1FFF7800" size="0x00000210"             default="0"/>
+
+        <debug      svd="CMSIS/SVD/STM32F429x.svd"/>
+
+        <debugvars configfile="CMSIS/Debug/STM32F405_415_407_417_427_437_429_439.dbgconf">
+          __var DbgMCU_CR      = 0x00000007;   // DBGMCU_CR: DBG_SLEEP, DBG_STOP, DBG_STANDBY
+          __var DbgMCU_APB1_Fz = 0x00000000;   // DGBMCU_APB1_FZ: All Peripherals Operate as in Normal Mode
+          __var DbgMCU_APB2_Fz = 0x00000000;   // DGBMCU_APB2_FZ: All Peripherals Operate as in Normal Mode
+          __var TraceClk_Pin   = 0x00040002;   // PE2
+          __var TraceD0_Pin    = 0x00040003;   // PE3
+          __var TraceD1_Pin    = 0x00040004;   // PE4
+          __var TraceD2_Pin    = 0x00040005;   // PE5
+          __var TraceD3_Pin    = 0x00040006;   // PE6
+        </debugvars>
+
+        <sequences>
+          <!-- Override for Pre-Defined Sequences -->
+          <sequence name="DebugDeviceUnlock">
+            <block>
+              Sequence("CheckID");
+            </block>
+          </sequence>
+
+          <sequence name="DebugCoreStart">
+            <block>
+              // Replication of Standard Functionality
+              Write32(0xE000EDF0, 0xA05F0001);                                        // Enable Core Debug via DHCSR
+
+              // Device Specific Debug Setup
+              Write32(0xE0042004, DbgMCU_CR);                                         // DBGMCU_CR: Configure MCU Debug
+              Write32(0xE0042008, DbgMCU_APB1_Fz);                                    // DBGMCU_APB1_FZ: Configure APB1 Peripheral Freeze Behavior
+              Write32(0xE004200C, DbgMCU_APB2_Fz);                                    // DBGMCU_APB1_FZ: Configure APB2 Peripheral Freeze Behavior
+            </block>
+          </sequence>
+
+          <!-- Override for Pre-Defined TraceStart Sequence -->
+          <sequence name="TraceStart">
+            <block>
+              __var traceSWO    = (__traceout &amp; 0x1) != 0;                        // SWO (asynchronous) Trace Selected?
+              __var traceTPIU   = (__traceout &amp; 0x2) != 0;                        // TPIU (synchronous) Trace Selected?
+            </block>
+
+            <control if="traceSWO">
+              <block>
+                Sequence("EnableTraceSWO");                                           // Call SWO Trace Setup
+              </block>
+            </control>
+
+            <control if="traceTPIU">
+              <block>
+                Sequence("EnableTraceTPIU");                                          // Call TPIU Trace Setup
+              </block>
+            </control>
+          </sequence>
+
+          <sequence name="TraceStop">
+            <block>
+              // Nothing required for SWO Trace
+              __var traceSWO    = (__traceout &amp; 0x1) != 0;                        // SWO enabled?
+              __var traceTPIU   = (__traceout &amp; 0x2) != 0;                        // Synchronous trace port enabled?
+            </block>
+
+            <control if="traceSWO">
+              <block>
+                Sequence("DisableTraceSWO");
+              </block>
+            </control>
+
+            <control if="traceTPIU">
+              <block>
+                Sequence("DisableTraceTPIU");
+              </block>
+            </control>
+          </sequence>
+
+          <!-- User-Defined Sequences -->
+          <sequence name="CheckID">
+            <block>
+              __var pidr1 = 0;
+              __var pidr2 = 0;
+              __var jep106id = 0;
+              __var ROMTableBase = 0;
+
+              __ap = 0;      // AHB-AP
+
+              ROMTableBase = ReadAP(0xF8) &amp; ~0x3;
+
+              pidr1 = Read32(ROMTableBase + 0x0FE4);
+              pidr2 = Read32(ROMTableBase + 0x0FE8);
+              jep106id = ((pidr2 &amp; 0x7) &lt;&lt; 4 ) | ((pidr1 &gt;&gt; 4) &amp; 0xF);
+            </block>
+
+            <control if="jep106id != 0x20">
+              <block>
+                Query(0, "Not a genuine ST Device! Abort connection", 1);
+                Message(2, "Not a genuine ST Device! Abort connection.");
+              </block>
+            </control>
+          </sequence>
+
+          <sequence name="EnableTraceSWO">
+            <block>
+              __var dbgmcu_val       = 0;                                                   // DBGMCU_CR Value
+              __var dbgmcu_trace_val = 0;                                                   // DBGMCU_CR Value
+
+              dbgmcu_val        = Read32(0xE0042004) &amp; (~0xE0);                         // Read DBGMCU_CR and clear trace setup
+              dbgmcu_trace_val  = (1 &lt;&lt; 5);                                           // Trace I/O Enable + Trace Mode Asynchronous
+
+              Sequence("ConfigureTraceSWOPin");
+            </block>
+
+            <block info="configure Trace I/O Enable + Trace Mode Asynchronous">
+              Write32(0xE0042004, dbgmcu_val | dbgmcu_trace_val);                           // Write DBGMCU_CR: Trace Settings
+            </block>
+          </sequence>
+
+          <sequence name="DisableTraceSWO">
+            <block>
+              __var dbgmcu_val       = 0;                                                   // DBGMCU_CR Value
+            </block>
+
+            <block info="unconfigure Trace I/O Enable + Trace Mode Asynchronous">
+              dbgmcu_val = Read32(0xE0042004) &amp; (~0xE0);                                // Read DBGMCU_CR and clear trace setup
+              Write32(0xE0042004, dbgmcu_val);                                              // Write DBGMCU_CR: Trace Settings
+            </block>
+          </sequence>
+
+          <sequence name="EnableTraceTPIU">
+            <block>
+              __var width            = (__traceout &amp; 0x003F0000) &gt;&gt; 16;
+              __var dbgmcu_val       = 0;                                                   // DBGMCU_CR Value
+              __var dbgmcu_trace_val = 0;                                                   // DBGMCU_CR Value
+
+              dbgmcu_val        = Read32(0xE0042004) &amp; (~0xE0);                         // Read DBGMCU_CR and clear trace setup
+
+              Sequence("ConfigureTraceTPIUPins");
+            </block>
+
+            <control if="width &gt;= 1" info="TPIU port width 1">
+              <block info="configure Trace I/O Enable + Trace Mode Synchronous 1 bit">
+                dbgmcu_trace_val  = (3 &lt;&lt; 5);
+              </block>
+            </control>
+
+            <control if="width &gt;= 2" info="TPIU port width 2">
+              <block info="configure Trace I/O Enable + Trace Mode Synchronous 2 bit">
+                dbgmcu_trace_val  = (5 &lt;&lt; 5);
+              </block>
+            </control>
+
+            <control if="width &gt;= 4" info="TPIU port width 4">
+              <block info="configure Trace I/O Enable + Trace Mode Synchronous 4 bit">
+                dbgmcu_trace_val  = (7 &lt;&lt; 5);
+              </block>
+            </control>
+
+            <block info="configure Trace I/O Enable + Trace Mode Asynchronous">
+              Write32(0xE0042004, dbgmcu_val | dbgmcu_trace_val);                           // Write DBGMCU_CR: Trace Settings
+            </block>
+          </sequence>
+
+          <sequence name="DisableTraceTPIU">
+            <block>
+              __var dbgmcu_val       = 0;                                                   // DBGMCU_CR Value
+            </block>
+
+            <block info="unconfigure Trace I/O Enable + Trace Mode Synchronous">
+              dbgmcu_val = Read32(0xE0042004) &amp; (~0xE0);                                // Read DBGMCU_CR and clear trace setup
+              Write32(0xE0042004, dbgmcu_val);                                              // Write DBGMCU_CR: Trace Settings
+            </block>
+          </sequence>
+
+          <sequence name="ConfigureTraceSWOPin">
+            <block>
+              __var pin     = 0;
+              __var port    = 0;
+              __var portAdr = 0;
+              __var pos     = 0;
+
+              __var SWO_Pin = 0x00010003;          // PB3
+            </block>
+
+            <!-- configure SWO -->
+            <block info="configure SWO">
+              pin     =               ((SWO_Pin            ) &amp; 0x0000FFFF);
+              port    =               ((SWO_Pin &gt;&gt; 16) &amp; 0x0000FFFF);
+              portAdr = 0x40020000 + (((SWO_Pin &gt;&gt; 16) &amp; 0x0000FFFF) * 0x400);
+
+              pos = pin * 2;
+              Write32(0x40023830,     ((Read32(0x40023830    )                         ) | (1 &lt;&lt; port)) );  // RCC_AHB1ENR:   IO port clock enable
+              Write32(portAdr + 0x00, ((Read32(portAdr + 0x00) &amp; ~( 3 &lt;&lt; pos)) | (2 &lt;&lt; pos )) );  // GPIOx_MODER:   Set Mode (Alternate Function)
+              Write32(portAdr + 0x08, ((Read32(portAdr + 0x08)                         ) | (3 &lt;&lt; pos )) );  // GPIOx_OSPEEDR: Set Speed (Very High Speed)
+              Write32(portAdr + 0x0C, ((Read32(portAdr + 0x0C) &amp; ~( 3 &lt;&lt; pos))                    ) );  // GPIOx_PUPDR:   Set I/O to no pull-up/pull-down
+            </block>
+            <control if="pin &lt;  8">
+              <block>
+                pos = ((pin    ) &amp; 7) * 4;
+                Write32(portAdr + 0x20, ((Read32(portAdr + 0x20) &amp; ~(15 &lt;&lt; pos))                    ) );  // GPIOx_AFRL:    Alternate Function to AF0
+              </block>
+            </control>
+            <control if="pin &gt;= 8">
+              <block>
+                pos = ((pin - 8) &amp; 7) * 4;
+                Write32(portAdr + 0x24, ((Read32(portAdr + 0x24) &amp; ~(15 &lt;&lt; pos))                    ) );  // GPIOx_AFRH:    Alternate Function to AF0
+              </block>
+            </control>
+          </sequence>
+
+          <sequence name="ConfigureTraceTPIUPins">
+            <block>
+              __var pin     = 8;
+              __var port    = 0;
+              __var portAdr = 0;
+              __var pos     = 0;
+
+              __var width   = (__traceout &amp; 0x003F0000) &gt;&gt; 16;
+            </block>
+
+            <!-- configure TRACECLK -->
+            <block info="configure TRACECLK">
+              pin     =                (TraceClk_Pin            ) &amp; 0x0000FFFF;
+              port    =                (TraceClk_Pin &gt;&gt; 16) &amp; 0x0000FFFF;
+              portAdr = 0x40020000 + (((TraceClk_Pin &gt;&gt; 16) &amp; 0x0000FFFF) * 0x400);
+
+              pos = pin * 2;
+              Write32(0x40023830,     ((Read32(0x40023830    )                         ) | (1 &lt;&lt; port)) );  // RCC_AHB1ENR:   IO port clock enable
+              Write32(portAdr + 0x00, ((Read32(portAdr + 0x00) &amp; ~( 3 &lt;&lt; pos)) | (2 &lt;&lt; pos )) );  // GPIOx_MODER:   Set Mode (Alternate Function)
+              Write32(portAdr + 0x08, ((Read32(portAdr + 0x08)                         ) | (3 &lt;&lt; pos )) );  // GPIOx_OSPEEDR: Set Speed (Very High Speed)
+              Write32(portAdr + 0x0C, ((Read32(portAdr + 0x0C) &amp; ~( 3 &lt;&lt; pos))                    ) );  // GPIOx_PUPDR:   Set I/O to no pull-up/pull-down
+            </block>
+            <control if="pin &lt;  8">
+              <block>
+                pos = ((pin    ) &amp; 7) * 4;
+                Write32(portAdr + 0x20, ((Read32(portAdr + 0x20) &amp; ~(15 &lt;&lt; pos))                    ) );  // GPIOx_AFRL:    Alternate Function to AF0
+              </block>
+            </control>
+            <control if="pin &gt;= 8">
+              <block>
+                pos = ((pin - 8) &amp; 7) * 4;
+                Write32(portAdr + 0x24, ((Read32(portAdr + 0x24) &amp; ~(15 &lt;&lt; pos))                    ) );  // GPIOx_AFRH:    Alternate Function to AF0
+              </block>
+            </control>
+
+            <control if="width &gt;= 1" info="TPIU port width 1">
+              <!-- configure TRACED0 -->
+              <block info="configure TRACED0">
+                pin     =                (TraceD0_Pin            ) &amp; 0x0000FFFF;
+                port    =                (TraceD0_Pin &gt;&gt; 16) &amp; 0x0000FFFF;
+                portAdr = 0x40020000 + (((TraceD0_Pin &gt;&gt; 16) &amp; 0x0000FFFF) * 0x400);
+
+                pos = pin * 2;
+                Write32(0x40023830,     ((Read32(0x40023830    )                         ) | (1 &lt;&lt; port)) );  // RCC_AHB1ENR:   IO port clock enable
+                Write32(portAdr + 0x00, ((Read32(portAdr + 0x00) &amp; ~( 3 &lt;&lt; pos)) | (2 &lt;&lt; pos )) );  // GPIOx_MODER:   Set Mode (Alternate Function)
+                Write32(portAdr + 0x08, ((Read32(portAdr + 0x08)                         ) | (3 &lt;&lt; pos )) );  // GPIOx_OSPEEDR: Set Speed (Very High Speed)
+                Write32(portAdr + 0x0C, ((Read32(portAdr + 0x0C) &amp; ~( 3 &lt;&lt; pos))                    ) );  // GPIOx_PUPDR:   Set I/O to no pull-up/pull-down
+              </block>
+              <control if="pin &lt;  8">
+                <block>
+                  pos = ((pin    ) &amp; 7) * 4;
+                  Write32(portAdr + 0x20, ((Read32(portAdr + 0x20) &amp; ~(15 &lt;&lt; pos))                    ) );  // GPIOx_AFRL:    Alternate Function to AF0
+                </block>
+              </control>
+              <control if="pin &gt;= 8">
+                <block>
+                  pos = ((pin - 8) &amp; 7) * 4;
+                  Write32(portAdr + 0x24, ((Read32(portAdr + 0x24) &amp; ~(15 &lt;&lt; pos))                    ) );  // GPIOx_AFRH:    Alternate Function to AF0
+                </block>
+              </control>
+            </control>
+
+            <control if="width &gt;= 2" info="TPIU port width 2">
+              <!-- configure TRACED1 -->
+              <block info="configure TRACED1">
+                pin     =                (TraceD1_Pin            ) &amp; 0x0000FFFF;
+                port    =                (TraceD1_Pin &gt;&gt; 16) &amp; 0x0000FFFF;
+                portAdr = 0x40020000 + (((TraceD1_Pin &gt;&gt; 16) &amp; 0x0000FFFF) * 0x400);
+
+                pos = pin * 2;
+                Write32(0x40023830,     ((Read32(0x40023830    )                         ) | (1 &lt;&lt; port)) );  // RCC_AHB1ENR:   IO port clock enable
+                Write32(portAdr + 0x00, ((Read32(portAdr + 0x00) &amp; ~( 3 &lt;&lt; pos)) | (2 &lt;&lt; pos )) );  // GPIOx_MODER:   Set Mode (Alternate Function)
+                Write32(portAdr + 0x08, ((Read32(portAdr + 0x08)                         ) | (3 &lt;&lt; pos )) );  // GPIOx_OSPEEDR: Set Speed (Very High Speed)
+                Write32(portAdr + 0x0C, ((Read32(portAdr + 0x0C) &amp; ~( 3 &lt;&lt; pos))                    ) );  // GPIOx_PUPDR:   Set I/O to no pull-up/pull-down
+              </block>
+              <control if="pin &lt;  8">
+                <block>
+                  pos = ((pin    ) &amp; 7) * 4;
+                  Write32(portAdr + 0x20, ((Read32(portAdr + 0x20) &amp; ~(15 &lt;&lt; pos))                    ) );  // GPIOx_AFRL:    Alternate Function to AF0
+                </block>
+              </control>
+              <control if="pin &gt;= 8">
+                <block>
+                  pos = ((pin - 8) &amp; 7) * 4;
+                  Write32(portAdr + 0x24, ((Read32(portAdr + 0x24) &amp; ~(15 &lt;&lt; pos))                    ) );  // GPIOx_AFRH:    Alternate Function to AF0
+                </block>
+              </control>
+            </control>
+
+            <control if="width &gt;= 4" info="TPIU port width 4">
+              <!-- configure TRACED2 -->
+              <block info="configure TRACED2">
+                pin     =                (TraceD2_Pin            ) &amp; 0x0000FFFF;
+                port    =                (TraceD2_Pin &gt;&gt; 16) &amp; 0x0000FFFF;
+                portAdr = 0x40020000 + (((TraceD2_Pin &gt;&gt; 16) &amp; 0x0000FFFF) * 0x400);
+
+                pos = pin * 2;
+                Write32(0x40023830,     ((Read32(0x40023830    )                         ) | (1 &lt;&lt; port)) );  // RCC_AHB1ENR:   IO port clock enable
+                Write32(portAdr + 0x00, ((Read32(portAdr + 0x00) &amp; ~( 3 &lt;&lt; pos)) | (2 &lt;&lt; pos )) );  // GPIOx_MODER:   Set Mode (Alternate Function)
+                Write32(portAdr + 0x08, ((Read32(portAdr + 0x08)                         ) | (3 &lt;&lt; pos )) );  // GPIOx_OSPEEDR: Set Speed (Very High Speed)
+                Write32(portAdr + 0x0C, ((Read32(portAdr + 0x0C) &amp; ~( 3 &lt;&lt; pos))                    ) );  // GPIOx_PUPDR:   Set I/O to no pull-up/pull-down
+              </block>
+              <control if="pin &lt;  8">
+                <block>
+                  pos = ((pin    ) &amp; 7) * 4;
+                  Write32(portAdr + 0x20, ((Read32(portAdr + 0x20) &amp; ~(15 &lt;&lt; pos))                    ) );  // GPIOx_AFRL:    Alternate Function to AF0
+                </block>
+              </control>
+              <control if="pin &gt;= 8">
+                <block>
+                  pos = ((pin - 8) &amp; 7) * 4;
+                  Write32(portAdr + 0x24, ((Read32(portAdr + 0x24) &amp; ~(15 &lt;&lt; pos))                    ) );  // GPIOx_AFRH:    Alternate Function to AF0
+                </block>
+              </control>
+
+              <!-- configure TRACED3 -->
+              <block info="configure TRACED3">
+                pin     =                (TraceD3_Pin            ) &amp; 0x0000FFFF;
+                port    =                (TraceD3_Pin &gt;&gt; 16) &amp; 0x0000FFFF;
+                portAdr = 0x40020000 + (((TraceD3_Pin &gt;&gt; 16) &amp; 0x0000FFFF) * 0x400);
+
+                pos = pin * 2;
+                Write32(0x40023830,     ((Read32(0x40023830    )                         ) | (1 &lt;&lt; port)) );  // RCC_AHB1ENR:   IO port clock enable
+                Write32(portAdr + 0x00, ((Read32(portAdr + 0x00) &amp; ~( 3 &lt;&lt; pos)) | (2 &lt;&lt; pos )) );  // GPIOx_MODER:   Set Mode (Alternate Function)
+                Write32(portAdr + 0x08, ((Read32(portAdr + 0x08)                         ) | (3 &lt;&lt; pos )) );  // GPIOx_OSPEEDR: Set Speed (Very High Speed)
+                Write32(portAdr + 0x0C, ((Read32(portAdr + 0x0C) &amp; ~( 3 &lt;&lt; pos))                    ) );  // GPIOx_PUPDR:   Set I/O to no pull-up/pull-down
+              </block>
+              <control if="pin &lt;  8">
+                <block>
+                  pos = ((pin    ) &amp; 7) * 4;
+                  Write32(portAdr + 0x20, ((Read32(portAdr + 0x20) &amp; ~(15 &lt;&lt; pos))                    ) );  // GPIOx_AFRL:    Alternate Function to AF0
+                </block>
+              </control>
+              <control if="pin &gt;= 8">
+                <block>
+                  pos = ((pin - 8) &amp; 7) * 4;
+                  Write32(portAdr + 0x24, ((Read32(portAdr + 0x24) &amp; ~(15 &lt;&lt; pos))                    ) );  // GPIOx_AFRH:    Alternate Function to AF0
+                </block>
+              </control>
+            </control>
+          </sequence>
+        </sequences>
+
+
+
+      </device>
+
+
+    </family>
+  </devices>
+
+</package>
